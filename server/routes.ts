@@ -29,5 +29,27 @@ export async function registerRoutes(
     }
   });
 
+  app.patch(api.deployments.updateRecipient.path, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const { recipientAddress } = api.deployments.updateRecipient.input.parse(req.body);
+      const updated = await storage.updateDeploymentRecipient(id, recipientAddress);
+      
+      if (!updated) {
+        return res.status(404).json({ message: "Deployment not found" });
+      }
+      
+      res.json(updated);
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({
+          message: err.errors[0].message,
+          field: err.errors[0].path.join('.'),
+        });
+      }
+      throw err;
+    }
+  });
+
   return httpServer;
 }

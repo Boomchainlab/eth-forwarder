@@ -31,6 +31,16 @@ export const api = {
         201: z.custom<typeof deployments.$inferSelect>(),
         400: errorSchemas.validation,
       },
+    },
+    updateRecipient: {
+      method: 'PATCH' as const,
+      path: '/api/deployments/:id/recipient' as const,
+      input: z.object({ recipientAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/) }),
+      responses: {
+        200: z.custom<typeof deployments.$inferSelect>(),
+        400: errorSchemas.validation,
+        404: errorSchemas.notFound,
+      },
     }
   }
 };

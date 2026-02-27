@@ -1,15 +1,29 @@
 import { format } from "date-fns";
-import { CheckCircle2, Copy, ExternalLink, History, FileCode, SearchX } from "lucide-react";
-import { useDeployments } from "@/hooks/use-deployments";
+import { CheckCircle2, Copy, ExternalLink, History, FileCode, SearchX, UserPlus, Loader2 } from "lucide-react";
+import { useDeployments, useUpdateRecipient } from "@/hooks/use-deployments";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { useState } from "react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { ethers } from "ethers";
+
+const FORWARDER_ABI = [
+  {"inputs":[{"internalType":"address payable","name":"_recipient","type":"address"}],"stateMutability":"nonpayable","type":"constructor"},
+  {"stateMutability":"payable","type":"receive"},
+  {"stateMutability":"payable","type":"fallback"},
+  {"inputs":[],"name":"recipient","outputs":[{"internalType":"address payable","name":"","type":"address"}],"stateMutability":"view","type":"function"},
+  {"inputs":[{"internalType":"address payable","name":"_recipient","type":"address"}],"name":"changeRecipient","outputs":[],"stateMutability":"nonpayable","type":"function"}
+];
 
 export function DeploymentHistory() {
   const { data: deployments, isLoading, error } = useDeployments();
   const { toast } = useToast();
+  const updateRecipient = useUpdateRecipient();
 
   const handleCopy = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -23,6 +37,42 @@ export function DeploymentHistory() {
   const shortenAddress = (address: string) => {
     if (!address) return "";
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
+  };
+
+  const [updatingId, setUpdatingId] = useState<number | null>(null);
+  const [newRecipient, setNewRecipient] = useState("");
+  const [privateKey, setPrivateKey] = useState("");
+  const [rpcUrl, setRpcUrl] = useState("https://eth-mainnet.g.alchemy.com/v2/mEaeaviMZAJ1PVDZWrWWdKyHqwbpcdpH");
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  const handleUpdateRecipient = async (id: number, contractAddress: string) => {
+    if (!ethers.isAddress(newRecipient)) {
+      toast({ title: "Invalid Address", description: "Please enter a valid Ethereum address.", variant: "destructive" });
+      return;
+    }
+
+    try {
+      setIsUpdating(true);
+      const provider = new ethers.JsonRpcProvider(rpcUrl);
+      const wallet = new ethers.Wallet(privateKey, provider);
+      const contract = new ethers.Contract(contractAddress, FORWARDER_ABI, wallet);
+
+      toast({ title: "Updating Recipient...", description: "Submitting transaction to the blockchain." });
+
+      const tx = await contract.changeRecipient(newRecipient);
+      await tx.wait();
+
+      await updateRecipient.mutateAsync({ id, recipientAddress: newRecipient });
+
+      toast({ title: "Success", description: "Recipient updated on-chain and in history." });
+      setUpdatingId(null);
+      setNewRecipient("");
+      setPrivateKey("");
+    } catch (err: any) {
+      toast({ title: "Update Failed", description: err.message, variant: "destructive" });
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
   return (
@@ -113,9 +163,73 @@ export function DeploymentHistory() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div className="bg-muted/20 rounded-lg p-3 border border-border/20">
-                      <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">Recipient</div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Recipient</span>
+                        <Dialog open={updatingId === deployment.id} onOpenChange={(open) => !open && setUpdatingId(null)}>
+                          <DialogTrigger asChild>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-5 w-5 hover:text-primary"
+                              onClick={() => {
+                                setUpdatingId(deployment.id);
+                                setNewRecipient(deployment.recipientAddress);
+                              }}
+                            >
+                              <UserPlus className="w-3 h-3" />
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent>
+                            <DialogHeader>
+                              <DialogTitle>Update Recipient</DialogTitle>
+                              <DialogDescription>
+                                Change the recipient address for this forwarder contract. This requires a blockchain transaction.
+                              </DialogDescription>
+                            </DialogHeader>
+                            <div className="space-y-4 py-4">
+                              <div className="space-y-2">
+                                <Label>New Recipient Address</Label>
+                                <Input 
+                                  value={newRecipient} 
+                                  onChange={(e) => setNewRecipient(e.target.value)} 
+                                  placeholder="0x..." 
+                                  className="font-mono"
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label>Owner Private Key (to sign tx)</Label>
+                                <Input 
+                                  type="password"
+                                  value={privateKey} 
+                                  onChange={(e) => setPrivateKey(e.target.value)} 
+                                  placeholder="0x..." 
+                                  className="font-mono"
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label>RPC URL</Label>
+                                <Input 
+                                  value={rpcUrl} 
+                                  onChange={(e) => setRpcUrl(e.target.value)} 
+                                  placeholder="https://..." 
+                                />
+                              </div>
+                            </div>
+                            <DialogFooter>
+                              <Button variant="outline" onClick={() => setUpdatingId(null)}>Cancel</Button>
+                              <Button 
+                                onClick={() => handleUpdateRecipient(deployment.id, deployment.contractAddress)}
+                                disabled={isUpdating}
+                              >
+                                {isUpdating && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                                Update on Chain
+                              </Button>
+                            </DialogFooter>
+                          </DialogContent>
+                        </Dialog>
+                      </div>
                       <div className="flex items-center justify-between">
                         <span className="font-mono text-xs text-foreground/80" title={deployment.recipientAddress}>
                           {shortenAddress(deployment.recipientAddress)}

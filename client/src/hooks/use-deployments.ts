@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "@shared/routes";
-import { type InsertDeployment, type DeploymentsListResponse } from "@shared/schema";
+import { api, buildUrl } from "@shared/routes";
+import { type InsertDeployment } from "@shared/schema";
 import { z } from "zod";
 
 export function useDeployments() {
@@ -37,6 +37,31 @@ export function useCreateDeployment() {
       }
       
       return api.deployments.create.responses[201].parse(await res.json());
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [api.deployments.list.path] });
+    },
+  });
+}
+
+export function useUpdateRecipient() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, recipientAddress }: { id: number; recipientAddress: string }) => {
+      const url = buildUrl(api.deployments.updateRecipient.path, { id });
+      const res = await fetch(url, {
+        method: api.deployments.updateRecipient.method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recipientAddress }),
+        credentials: "include",
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to update recipient");
+      }
+
+      return api.deployments.updateRecipient.responses[200].parse(await res.json());
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [api.deployments.list.path] });
