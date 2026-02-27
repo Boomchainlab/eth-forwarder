@@ -1,3 +1,4 @@
+import * as React from "react";
 import { DeployForm } from "@/components/deploy-form";
 import { DeploymentHistory } from "@/components/deployment-history";
 import { Zap } from "lucide-react";
